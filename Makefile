@@ -21,7 +21,7 @@ JSON := $(TOP).json
 ASC  := $(TOP).asc
 BIN  := $(TOP).bin
 
-.PHONY: all prog clean stats game test
+.PHONY: all prog clean stats game test trade p4-test
 
 # Default target
 all: prog
@@ -37,6 +37,18 @@ game: $(GAME_HEX)
 
 test:
 	$(MAKE) -C sw test
+
+# Proyecto 4: programa de trading y simulacion oficial de practica.
+sw/trade.hex: sw/trade.s sw/assembler.py
+	python3 sw/assembler.py sw/trade.s sw/trade.hex
+
+trade: sw/trade.hex
+
+p4-test: sw/trade.hex
+	iverilog -g2012 -s tb_proyecto_4 -o /tmp/tb_p4 \
+		$$(yosys-config --datdir)/ice40/cells_sim.v \
+		rtl/*.v rtl/espino_core/*.v tb/tb_proyecto_4.sv
+	vvp /tmp/tb_p4
 
 # Step 2: Place and Route using NextPNR
 $(ASC): $(JSON) $(PCF)
