@@ -10,6 +10,9 @@
 
 module pochoco_soc #(
   parameter NumWords   = 512,
+  parameter UseSma     = 0,
+  parameter LitePeriph = 0,
+  parameter UseShifter = 1,   // shifter parcial (SLL 2,6,8; SRL 6,8) habilitado por defecto
   parameter MemFile    = "../sw/blink.hex"
 ) (
   input  wire       i_Clk,
@@ -47,7 +50,7 @@ module pochoco_soc #(
   wire [3:0]  data_be;
   wire [31:0] data_addr, data_wdata, data_rdata;
 
-  espino_core #(.BootAddr(32'h0000_0000)) u_core (
+  espino_core #(.BootAddr(32'h0000_0000), .UseShifter(UseShifter)) u_core (
     .clk_i         (clk),
     .rst_ni        (rst_ni),
     .instr_req_o   (instr_req),
@@ -61,30 +64,34 @@ module pochoco_soc #(
     .data_rdata_i  (data_rdata)
   );
 
-  wire is_mmio, spi_sel, per_sel;
+  wire is_mmio, spi_sel, per_sel, sma_sel;
   assign is_mmio = data_addr[31];
-  assign per_sel = is_mmio & ~data_addr[16];
-  assign spi_sel = is_mmio &  data_addr[16];
+  assign sma_sel = is_mmio &  data_addr[17];                  // 0x8002_0000: acelerador SMA
+  assign per_sel = is_mmio & ~data_addr[16] & ~data_addr[17];
+  assign spi_sel = is_mmio &  data_addr[16] & ~data_addr[17];
 
   wire ram_b_req, per_req, spi_req;
   assign ram_b_req = data_req & ~is_mmio;
   assign per_req   = data_req &  per_sel;
   assign spi_req   = data_req &  spi_sel;
 
-  wire [31:0] ram_b_rdata, per_rdata, spi_rdata;
+  wire [31:0] ram_b_rdata, per_rdata, spi_rdata, sma_rdata;
 
-  reg rd_is_per, rd_is_spi;
+  reg rd_is_per, rd_is_spi, rd_is_sma;
   always @(posedge clk or negedge rst_ni) begin
     if (!rst_ni) begin
       rd_is_per <= 1'b0;
       rd_is_spi <= 1'b0;
+      rd_is_sma <= 1'b0;
     end else if (data_req & ~data_we) begin
       rd_is_per <= per_sel;
       rd_is_spi <= spi_sel;
+      rd_is_sma <= sma_sel;
     end
   end
   assign data_rdata = rd_is_per ? per_rdata :
-                      rd_is_spi ? spi_rdata : ram_b_rdata;
+                      rd_is_spi ? spi_rdata :
+                      rd_is_sma ? sma_rdata : ram_b_rdata;
 
   pochoco_ram #(.NumWords(NumWords), .MemFile(MemFile)) u_ram (
     .clk_i     (clk),
@@ -102,7 +109,7 @@ module pochoco_soc #(
   // Peripherals
   wire [6:0] seg1, seg2;
 
-  pochoco_periph u_periph (
+  pochoco_periph #(.Lite(LitePeriph)) u_periph (
     .clk_i     (clk),
     .rst_ni    (rst_ni),
     .sel_i     (per_sel),
@@ -118,6 +125,14 @@ module pochoco_soc #(
   );
 
   // SPI Slave
+  generate if (UseSma) begin : g_sma
+    pochoco_sma u_sma (
+      .clk_i(clk), .rst_ni(rst_ni), .sel_i(sma_sel), .req_i(data_req & sma_sel),
+      .we_i(data_we), .addr_i(data_addr[7:0]), .wdata_i(data_wdata), .rdata_o(sma_rdata));
+  end else begin : g_nosma
+    assign sma_rdata = 32'b0;
+  end endgenerate
+
   pochoco_spi_slave u_spi (
     .clk_i      (clk),
     .rst_ni     (rst_ni),

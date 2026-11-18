@@ -46,3 +46,14 @@ class ValidationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Proyecto4Instructions(unittest.TestCase):
+    def test_lbu_sb_y_shifts(self):
+        from assembler import assemble
+        # codificaciones verificadas contra el ensamblador RISC-V de referencia
+        self.assertEqual(assemble("lbu x11, 1024(x2)"), [0x40014583])
+        self.assertEqual(assemble("sb x10, 1024(x2)"), [0x40a10023])
+        self.assertEqual(assemble("slli x5, x10, 6"), [0x00651293])
+        self.assertEqual(assemble("srli x11, x5, 6"), [0x0062d593])
+        self.assertEqual(assemble("srai x11, x5, 8"), [0x4082d593])

@@ -9,7 +9,7 @@
 # - Nicolás Villegas <navillegas@miuandes.cl>
 
 # Configuration
-TOP  ?= game_top
+TOP  ?= trade_top
 PCF  := goboard.pcf
 GAME_HEX := sw/game.hex
 
@@ -27,7 +27,7 @@ BIN  := $(TOP).bin
 all: prog
 
 # Step 1: Synthesis using Yosys
-$(JSON): $(SRC) $(GAME_HEX)
+$(JSON): $(SRC) sw/trade.hex
 	yosys -p "read_verilog $(SRC); synth_ice40 -top $(TOP) -json ${TOP}.json; stat"
 
 $(GAME_HEX): sw/game.s sw/assembler.py
@@ -41,8 +41,12 @@ test:
 # Proyecto 4: programa de trading y simulacion oficial de practica.
 sw/trade.hex: sw/trade.s sw/assembler.py
 	python3 sw/assembler.py sw/trade.s sw/trade.hex
+sw/trade_sw.hex: sw/trade_sw.s sw/assembler.py
+	python3 sw/assembler.py sw/trade_sw.s sw/trade_sw.hex
+sw/trade_hw.hex: sw/trade_hw.s sw/assembler.py
+	python3 sw/assembler.py sw/trade_hw.s sw/trade_hw.hex
 
-trade: sw/trade.hex
+trade: sw/trade.hex sw/trade_sw.hex sw/trade_hw.hex
 
 p4-test: sw/trade.hex
 	iverilog -g2012 -s tb_proyecto_4 -o /tmp/tb_p4 \

@@ -244,6 +244,27 @@ def encode_instruction(
         immediate, rs1 = parse_memory_operand(operands[1])
         return encode_s(0x23, 0b010, rs1, parse_register(operands[0]), immediate)
 
+    # Proyecto 4: shifts por inmediato (requieren UseShifter=1 en el RTL)
+    if mnemonic in ("slli", "srli", "srai"):
+        expect_operands(mnemonic, operands, 3)
+        shamt = parse_integer(operands[2])
+        if not 0 <= shamt <= 31:
+            raise AssemblyError(f"shamt fuera de rango: {shamt}")
+        funct3 = 0b001 if mnemonic == "slli" else 0b101
+        high = 0b0100000 if mnemonic == "srai" else 0
+        return encode_i(0x13, funct3, parse_register(operands[0]), parse_register(operands[1]), (high << 5) | shamt)
+
+    # Proyecto 4: acceso por byte (el anillo de precios guarda 4 precios por palabra)
+    if mnemonic == "lbu":
+        expect_operands(mnemonic, operands, 2)
+        immediate, rs1 = parse_memory_operand(operands[1])
+        return encode_i(0x03, 0b100, parse_register(operands[0]), rs1, immediate)
+
+    if mnemonic == "sb":
+        expect_operands(mnemonic, operands, 2)
+        immediate, rs1 = parse_memory_operand(operands[1])
+        return encode_s(0x23, 0b000, rs1, parse_register(operands[0]), immediate)
+
     if mnemonic in branches:
         expect_operands(mnemonic, operands, 3)
         return encode_b(

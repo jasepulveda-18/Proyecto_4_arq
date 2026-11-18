@@ -8,7 +8,9 @@
 // Authors:
 // - Nicolás Villegas <navillegas@miuandes.cl>
 
-module espino_id_stage (
+module espino_id_stage #(
+  parameter UseShifter = 0
+) (
   input  wire        clk_i,
   input  wire        rst_ni,
 
@@ -112,7 +114,7 @@ module espino_id_stage (
 
   wire [31:0] alu_result;
   wire        alu_cmp_result;
-  espino_alu u_alu (
+  espino_alu #(.UseShifter(UseShifter)) u_alu (
     .operator_i   (alu_operator),
     .operand_a_i  (operand_a),
     .operand_b_i  (operand_b),

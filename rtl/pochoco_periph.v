@@ -8,7 +8,9 @@
 // Authors:
 // - Nicolás Villegas <navillegas@miuandes.cl>
 
-module pochoco_periph (
+module pochoco_periph #(
+  parameter Lite = 0   // 1: sin LEDs, displays ni contador de ciclos (ahorra LUTs en Proyecto 4)
+) (
   input  wire        clk_i,
   input  wire        rst_ni,
   input  wire        sel_i,
@@ -35,14 +37,14 @@ module pochoco_periph (
   // 25,000,000 times per second and wraps naturally at 32 bits.
   always @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) cycle_q <= 32'b0;
-    else         cycle_q <= cycle_q + 32'd1;
+    else if (!Lite) cycle_q <= cycle_q + 32'd1;
   end
   
   always @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       led_q   <= 4'b0;
       digit_q <= 8'b0;
-    end else if (access & we_i) begin
+    end else if (!Lite && access & we_i) begin
       case (off)
         6'd0: digit_q <= wdata_i[7:0];
         6'd1: led_q   <= wdata_i[3:0];

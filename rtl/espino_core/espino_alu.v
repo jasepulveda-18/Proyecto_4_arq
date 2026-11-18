@@ -8,7 +8,9 @@
 // Authors:
 // - Nicolás Villegas <navillegas@miuandes.cl>
 
-module espino_alu (
+module espino_alu #(
+  parameter UseShifter = 0    // 1: habilita un shifter parcial (en el Espino base los shifts se ejecutan como ADD)
+) (
   input  wire [3:0]  operator_i,
   input  wire [31:0] operand_a_i,
   input  wire [31:0] operand_b_i,
@@ -69,6 +71,16 @@ module espino_alu (
       ALU_AND:  result_o = operand_a_i & operand_b_i;
       ALU_SLT:  result_o = {31'b0, cmp_lt};
       ALU_SLTU: result_o = {31'b0, cmp_ltu};
+      // Shifter parcial (UseShifter=1): solo los desplazamientos que usa trade_shift.s
+      //   SLL por 2, 6, 8 y SRL por 6, 8. Un barrel shifter completo de 32 bits costaba ~340 LUTs;
+      //   cualquier otro shamt (y SRA) sigue ejecutandose como ADD, igual que en el Espino base.
+      ALU_SLL:  result_o = !UseShifter ? operand_a_i + operand_b_i :
+                           (shamt == 5'd2) ? {operand_a_i[29:0], 2'b0} :
+                           (shamt == 5'd6) ? {operand_a_i[25:0], 6'b0} :
+                           (shamt == 5'd8) ? {operand_a_i[23:0], 8'b0} : operand_a_i + operand_b_i;
+      ALU_SRL:  result_o = !UseShifter ? operand_a_i + operand_b_i :
+                           (shamt == 5'd6) ? {6'b0, operand_a_i[31:6]} :
+                           (shamt == 5'd8) ? {8'b0, operand_a_i[31:8]} : operand_a_i + operand_b_i;
       // Shifts disabled to save LUTs
       // ALU_SLL:  result_o = operand_a_i << shamt;
       // ALU_SRL:  result_o = operand_a_i >> shamt;
