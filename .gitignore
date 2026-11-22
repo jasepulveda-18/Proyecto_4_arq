@@ -21,3 +21,4 @@ sim/sim
 *.vcd
 *.csv
 !tb/practica.csv
+informe/*.zip
