@@ -1,7 +1,7 @@
 # Proyecto 4 - Pochoco Trader, VERSION FINAL (V2): shifter parcial en el ALU (UseShifter=1) y estrategia EMA.
 #   SF = 64*EMA_rapida (alfa = 1/64), SS = 256*EMA_lenta (alfa = 1/256)
 #   SF += p - (SF >> 6);  SS += p - (SS >> 8);   d = 4*SF - SS = 256*(EMA_r - EMA_l)
-#   d > +384 -> largo;  d < -384 -> efectivo (banda 1.5);  al cambiar: 6 ordenes de 63 acciones.
+#   d > +768 -> largo; d < -1280 -> efectivo (histeresis +3/-5); al cambiar: 6 ordenes de 63 acciones.
 # No necesita anillo de precios en RAM. Referencia exacta: ref/trader_ref_ema.py.
 # Registros: x1=base SPI x3=primer precio pendiente x5=SF x6=SS x7=largo x8=rafagas x10=precio x11..x13=temp
 
@@ -35,12 +35,12 @@ update:
     slli x11, x5, 2
     sub  x11, x11, x6         # d = 4*SF - SS
 
-    slti x12, x11, 385        # d <= 384 ?
+    slti x12, x11, 769        # d <= 768 ? (EMA_r - EMA_l <= 3)
     bne  x12, x0, not_up
     addi x13, x0, 1
     jal  x0, set_state
 not_up:
-    slti x12, x11, -384       # d < -384 ?
+    slti x12, x11, -1280      # d < -1280 ? (EMA_r - EMA_l < -5)
     beq  x12, x0, emit
     addi x13, x0, 0
 set_state:

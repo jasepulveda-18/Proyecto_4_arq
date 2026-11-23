@@ -1,7 +1,7 @@
 # Proyecto 4 — Pochoco Trader (co-diseño HW/SW sobre Espino Core)
 
 Agente de inversión que corre en el Espino Core: recibe el precio por SPI, decide comprar / vender / mantener y escribe `DECISION`.
-**Versión final (V2):** cruce de EMA rápida (α = 2⁻⁶) y lenta (α = 2⁻⁸), largo/efectivo con histéresis, sobre un ALU con shifter parcial.
+**Versión final (V2):** cruce de EMA rápida (α = 2⁻⁶) y lenta (α = 2⁻⁸), largo/efectivo con histéresis asimétrica (+3 para entrar y −5 para salir), sobre un ALU con shifter parcial.
 
 ## Contenido
 
@@ -63,7 +63,7 @@ python3 ref/trader_ref_ema.py tb/practica.csv          # patrimonio, órdenes y 
 | No operar | 10 000 | 0 | 0 |
 | Comprar y mantener | 9 695 | 1 | 9 300 |
 | V0 SMA 128/512 | 9 962 | 44 | 5 163 |
-| **V2 EMA 64/256 (final)** | **10 532** | 26 | 4 502 |
+| **V2 EMA 64/256 (final)** | **13 234** | 16 | 4 374 |
 
 | Variante | LUTs | Celdas lógicas (de 1280) | Fmax | Ciclos prom / máx | IC prom | CPI |
 |---|---|---|---|---|---|---|
