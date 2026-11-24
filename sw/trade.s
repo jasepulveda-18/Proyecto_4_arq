@@ -1,9 +1,12 @@
-# Proyecto 4 - Pochoco Trader, VERSION FINAL (V2): shifter parcial en el ALU (UseShifter=1) y estrategia EMA.
+# Proyecto 4 - Pochoco Trader, VERSION FINAL (V2): shifter parcial en el ALU (UseShifter=1) y estrategia adaptativa.
 #   SF = 64*EMA_rapida (alfa = 1/64), SS = 256*EMA_lenta (alfa = 1/256)
 #   SF += p - (SF >> 6);  SS += p - (SS >> 8);   d = 4*SF - SS = 256*(EMA_r - EMA_l)
-#   d > +768 -> largo; d < -1280 -> efectivo (histeresis +3/-5); al cambiar: 6 ordenes de 63 acciones.
+#   Normal: d > +1280 -> largo; d < -2048 -> efectivo (histeresis +5/-8).
+#   Un salto de precio >10 tiene prioridad y bloquea su direccion por 1600 ticks.
+#   Al cambiar de estado se emiten 6 ordenes de 63 acciones.
 # No necesita anillo de precios en RAM. Referencia exacta: ref/trader_ref_ema.py.
-# Registros: x1=base SPI x3=primer precio pendiente x5=SF x6=SS x7=largo x8=rafagas x10=precio x11..x13=temp
+# Registros: x1=base SPI x2=precio anterior x3=primer precio pendiente x4=bloqueo
+#            x5=SF x6=SS x7=largo x8=rafagas x10=precio x11..x13=temp
 
 .section .text
 .global _start
@@ -23,6 +26,7 @@ wait_price:
     beq  x3, x0, update
     slli x5, x10, 6           # SF = 64*p0
     slli x6, x10, 8           # SS = 256*p0
+    addi x2, x10, 0           # precio anterior = p0 (evita un salto falso al iniciar)
     addi x3, x0, 0
 
 update:
@@ -35,12 +39,31 @@ update:
     slli x11, x5, 2
     sub  x11, x11, x6         # d = 4*SF - SS
 
-    slti x12, x11, 769        # d <= 768 ? (EMA_r - EMA_l <= 3)
+    sub  x12, x10, x2         # variacion desde el tick anterior
+    addi x2, x10, 0
+    slti x13, x12, 11         # variacion < +11 ?
+    bne  x13, x0, not_jump_up
+    addi x4, x0, 1600         # salto positivo: seguir largo durante 1600 ticks
+    addi x13, x0, 1
+    jal  x0, set_state
+not_jump_up:
+    slti x13, x12, -10        # variacion < -10 ?
+    beq  x13, x0, no_jump
+    addi x4, x0, 1600         # salto negativo: quedar en efectivo durante 1600 ticks
+    addi x13, x0, 0
+    jal  x0, set_state
+no_jump:
+    beq  x4, x0, check_ema
+    addi x4, x4, -1
+    jal  x0, emit
+
+check_ema:
+    slti x12, x11, 1281       # d <= 1280 ? (EMA_r - EMA_l <= 5)
     bne  x12, x0, not_up
     addi x13, x0, 1
     jal  x0, set_state
 not_up:
-    slti x12, x11, -1280      # d < -1280 ? (EMA_r - EMA_l < -5)
+    slti x12, x11, -2048      # d < -2048 ? (EMA_r - EMA_l < -8)
     beq  x12, x0, emit
     addi x13, x0, 0
 set_state:

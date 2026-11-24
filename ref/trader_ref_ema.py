@@ -3,22 +3,30 @@
 
 Usa EMA rapida (alfa=2^-6) y lenta (alfa=2^-8):
 SF = 64*ema_f, SS = 256*ema_s y d = 4*SF - SS.
-La histeresis asimetrica exige una ventaja mayor que 3 para comprar y una
-desventaja menor que -5 para vender, reduciendo cambios por ruido.
+Sin movimientos bruscos, la histeresis exige una ventaja mayor que 5 para
+comprar y una desventaja menor que -8 para vender. Un cambio de mas de 10
+unidades en un tick tiene prioridad y fija su direccion durante 1600 ticks.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 import market
-BUY_THR, SELL_THR = 768, 1280
+BUY_THR, SELL_THR = 1280, 2048
+JUMP_THR, JUMP_LOCK = 10, 1600
 BURST, BUY63, SELL63, HOLD = 6, 0x7F, 0xBF, 0x00
 class Trader:
     def __init__(self):
-        self.first = True; self.sf = self.ss = 0; self.long = 1; self.burst = BURST
+        self.first = True; self.sf = self.ss = self.prev = 0
+        self.long = 1; self.burst = BURST; self.lock = 0
     def step(self, p):
-        if self.first: self.sf = p << 6; self.ss = p << 8; self.first = False
+        if self.first:
+            self.sf = p << 6; self.ss = p << 8; self.prev = p; self.first = False
+        dp = p - self.prev; self.prev = p
         self.sf += p - (self.sf >> 6); self.ss += p - (self.ss >> 8)
         d = 4*self.sf - self.ss; new = self.long
-        if d > BUY_THR: new = 1
+        if dp > JUMP_THR: new = 1; self.lock = JUMP_LOCK
+        elif dp < -JUMP_THR: new = 0; self.lock = JUMP_LOCK
+        elif self.lock: self.lock -= 1
+        elif d > BUY_THR: new = 1
         elif d < -SELL_THR: new = 0
         if new != self.long: self.burst = BURST
         self.long = new

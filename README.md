@@ -1,13 +1,13 @@
 # Proyecto 4 — Pochoco Trader (co-diseño HW/SW sobre Espino Core)
 
 Agente de inversión que corre en el Espino Core: recibe el precio por SPI, decide comprar / vender / mantener y escribe `DECISION`.
-**Versión final (V2):** cruce de EMA rápida (α = 2⁻⁶) y lenta (α = 2⁻⁸), largo/efectivo con histéresis asimétrica (+3 para entrar y −5 para salir), sobre un ALU con shifter parcial.
+**Versión final (V2):** estrategia adaptativa sobre un ALU con shifter parcial. Combina un cruce de EMA rápida (α = 2⁻⁶) y lenta (α = 2⁻⁸) con una reacción prioritaria ante variaciones grandes de precio. En el régimen normal usa histéresis asimétrica (+5 para entrar y −8 para salir); un salto mayor que 10 unidades mantiene su dirección durante 1600 ticks para capturar movimientos fuertes sin reaccionar inmediatamente al ruido posterior.
 
 ## Contenido
 
 | Ruta | Qué es |
 |---|---|
-| `sw/trade.s` | **Programa final (V2)**: EMA 64/256 con shifter parcial |
+| `sw/trade.s` | **Programa final (V2)**: EMA 64/256 + detector de movimientos grandes |
 | `sw/trade_sw.s` | V0: solo software, SMA 128/512 con anillo de 512 bytes (sin cambios de RTL) |
 | `sw/trade_hw.s` | V1: indicador SMA en el periférico `rtl/pochoco_sma.v` |
 | `sw/assembler.py` | Assembler del grupo (agrega `lbu`, `sb`, `slli`, `srli`, `srai`) |
@@ -63,13 +63,13 @@ python3 ref/trader_ref_ema.py tb/practica.csv          # patrimonio, órdenes y 
 | No operar | 10 000 | 0 | 0 |
 | Comprar y mantener | 9 695 | 1 | 9 300 |
 | V0 SMA 128/512 | 9 962 | 44 | 5 163 |
-| **V2 EMA 64/256 (final)** | **13 234** | 16 | 4 374 |
+| **V2 adaptativa (final)** | **20 774** | 10 | 5 023 |
 
 | Variante | LUTs | Celdas lógicas (de 1280) | Fmax | Ciclos prom / máx | IC prom | CPI |
 |---|---|---|---|---|---|---|
 | V0 software | 973 | 1152 | 46,8 MHz | 82,4 / 100 | 36,6 | 2,25 |
 | V1 acelerador SMA | 994 | 1195 | 42,0 MHz | 51,8 / 564 (1.er tick) | 21,1 | 2,45 |
-| **V2 shifter + EMA** | 1040 | 1205 | 45,3 MHz | 50,6 / 63 | 22,2 | 2,28 |
+| **V2 shifter + estrategia adaptativa** | 1040 | 1205 | 45,3 MHz | 59,5 / 75 | 25,6 | 2,32 |
 
 Presupuesto de la ronda 3: 2262 ciclos. La PLL no es una opción en esta placa (el iCE40 HX1K no la tiene).
 
