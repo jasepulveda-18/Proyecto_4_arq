@@ -12,11 +12,11 @@ sys.path.insert(0, os.path.dirname(__file__))
 import market
 BUY_THR, SELL_THR = 1280, 2048
 JUMP_THR, JUMP_LOCK = 10, 1600
-BURST, BUY63, SELL63, HOLD = 6, 0x7F, 0xBF, 0x00
+BUY63, SELL63 = 0x7F, 0xBF
 class Trader:
     def __init__(self):
         self.first = True; self.sf = self.ss = self.prev = 0
-        self.long = 1; self.burst = BURST; self.lock = 0
+        self.long = 1; self.lock = 0
     def step(self, p):
         if self.first:
             self.sf = p << 6; self.ss = p << 8; self.prev = p; self.first = False
@@ -28,10 +28,10 @@ class Trader:
         elif self.lock: self.lock -= 1
         elif d > BUY_THR: new = 1
         elif d < -SELL_THR: new = 0
-        if new != self.long: self.burst = BURST
         self.long = new
-        if self.burst: self.burst -= 1; return BUY63 if self.long else SELL63
-        return HOLD
+        # Una orden puede mover como maximo 63 acciones. Se repite mientras
+        # dure el estado; la maestra ignora sin comision la parte no ejecutable.
+        return BUY63 if self.long else SELL63
 def decisions(prices):
     t = Trader(); out, d = [], 0
     for p in prices: out.append(d); d = t.step(p)

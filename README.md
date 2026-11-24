@@ -69,13 +69,13 @@ python3 ref/trader_ref_ema.py tb/practica.csv          # patrimonio, órdenes y 
 |---|---|---|---|---|---|---|
 | V0 software | 973 | 1152 | 46,8 MHz | 82,4 / 100 | 36,6 | 2,25 |
 | V1 acelerador SMA | 994 | 1195 | 42,0 MHz | 51,8 / 564 (1.er tick) | 21,1 | 2,45 |
-| **V2 shifter + estrategia adaptativa** | 1040 | 1205 | 45,3 MHz | 59,5 / 75 | 25,6 | 2,32 |
+| **V2 shifter + estrategia adaptativa** | 1040 | 1205 | 45,3 MHz | 61,7 / 75 | 27,5 | 2,24 |
 
 Presupuesto de la ronda 3: 2262 ciclos. La PLL no es una opción en esta placa (el iCE40 HX1K no la tiene).
 
 ## Notas de diseño
 
-- La maestra recorta las compras a lo que alcanza la caja y las ventas a lo que se tiene, y una orden sin efecto no paga comisión. Por eso el programa envía ráfagas de 6 órdenes de 63 acciones al cambiar de estado y no necesita llevar la contabilidad.
+- La maestra recorta las compras a lo que alcanza la caja y las ventas a lo que se tiene, y una orden sin efecto no paga comisión. Por eso el programa repite órdenes de 63 acciones mientras mantiene su estado. Esto permite completar posiciones incluso con precios bajos del rango permitido (1 a 255), sin llevar una copia de la contabilidad ni conocer la serie.
 - Las variantes V1 y V2 usan `LitePeriph=1` (sin LEDs, displays ni contador de ciclos) para caber en 1280 celdas lógicas.
 - Todo el hardware agregado tiene testbench: `tb_sma.sv` para el acelerador y `tb_metrics.sv` / `tb_proyecto_4.sv` (con comparación contra la referencia) para el ALU con shifter.
 - Datos sintéticos para validar robustez: `ref/gen_series.py` (requiere precios diarios descargados a `/tmp/p4data/*.json`; no se usan dentro del diseño).

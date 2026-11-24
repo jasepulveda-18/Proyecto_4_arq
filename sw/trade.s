@@ -3,10 +3,11 @@
 #   SF += p - (SF >> 6);  SS += p - (SS >> 8);   d = 4*SF - SS = 256*(EMA_r - EMA_l)
 #   Normal: d > +1280 -> largo; d < -2048 -> efectivo (histeresis +5/-8).
 #   Un salto de precio >10 tiene prioridad y bloquea su direccion por 1600 ticks.
-#   Al cambiar de estado se emiten 6 ordenes de 63 acciones.
+#   Mientras dure el estado se repite una orden de 63 acciones. Asi funciona
+#   para todo el rango permitido de precios (1..255), sin conocer caja ni serie.
 # No necesita anillo de precios en RAM. Referencia exacta: ref/trader_ref_ema.py.
 # Registros: x1=base SPI x2=precio anterior x3=primer precio pendiente x4=bloqueo
-#            x5=SF x6=SS x7=largo x8=rafagas x10=precio x11..x13=temp
+#            x5=SF x6=SS x7=largo x10=precio x11..x13=temp
 
 .section .text
 .global _start
@@ -15,7 +16,6 @@ _start:
     lui  x1, 0x80010
     addi x3, x0, 1            # falta el primer precio
     addi x7, x0, 1            # estado inicial: largo
-    addi x8, x0, 6            # rafaga inicial de compra
     sw   x0, 8(x1)
 
 wait_price:
@@ -67,14 +67,9 @@ not_up:
     beq  x12, x0, emit
     addi x13, x0, 0
 set_state:
-    beq  x13, x7, emit
     addi x7, x13, 0
-    addi x8, x0, 6
 
 emit:
-    addi x11, x0, 0
-    beq  x8, x0, write
-    addi x8, x8, -1
     addi x11, x0, 0x7F        # comprar 63
     bne  x7, x0, write
     addi x11, x0, 0xBF        # vender 63
