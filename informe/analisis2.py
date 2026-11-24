@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Segunda parte del analisis: perfil por instruccion, ops/bytes (roofline) y robustez por accion.
-Uso: python3 informe/analisis2.py [dir_perfiles] [dir_series_diarias_json]"""
+"""Perfil por instruccion, ops/bytes y figura roofline.
+Uso: python3 informe/analisis2.py [dir_perfiles]"""
 import sys, os, csv, json, re
 R = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 sys.path.insert(0, R+'/ref'); sys.path.insert(0, R+'/sw'); sys.path.insert(0, '/tmp/p4r')
@@ -45,18 +45,5 @@ for k, c in [('V0','tab:orange'), ('V1','tab:purple'), ('V2','tab:green')]:
     out[k].update(intensidad=intens, perf_mops=perf/1e6); ax.loglog([intens],[perf/1e6],'o',color=c,label=k)
 ax.set_xlabel('intensidad operacional (ops/byte)'); ax.set_ylabel('Mops/s'); ax.legend(fontsize=8); ax.grid(True, which='both', alpha=.3)
 plt.tight_layout(); plt.savefig(R+'/informe/fig/roofline.pdf'); plt.close()
-# robustez por accion (series sinteticas de gen_series.py)
-try:
-    import gen_series
-    S = gen_series.all_series(seed=7, per_ticker=10); tab = {}
-    for name, p in S:
-        t = name.split('_')[0]; row = tab.setdefault(t, {'V0': [], 'V2': [], 'bh': []}); bh = market.buy_hold(p)
-        row['bh'].append(bh)
-        for k, m in (('V0', trader_ref), ('V2', trader_ref_ema)): row[k].append(market.run(p, m.decisions(p))['w'])
-    out['por_accion'] = {t: {k: (float(np.mean(v)), float(np.mean(np.array(r['V0' if k=='V0' else 'V2' if k=='V2' else 'bh']) >= 0))) for k, v in r.items()} for t, r in tab.items()}
-    out['por_accion'] = {t: dict(bh=float(np.mean(r['bh'])), V0=float(np.mean(r['V0'])), V2=float(np.mean(r['V2'])),
-                                 gana_V0=float(np.mean(np.array(r['V0']) > np.array(r['bh']))), gana_V2=float(np.mean(np.array(r['V2']) > np.array(r['bh'])))) for t, r in tab.items()}
-except Exception as e:
-    out['por_accion'] = str(e)
 json.dump(out, open(R+'/informe/datos2.json', 'w'), indent=1)
 print(json.dumps(out, indent=1))

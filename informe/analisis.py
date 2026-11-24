@@ -21,7 +21,7 @@ def curves(prices, decs):
         W.append(caja+acc*p)
     return np.array(W), orders
 res = {}
-for name, dec in [('V0 SMA128/512', trader_ref.decisions(pr)), ('V2 EMA 64/256', trader_ref_ema.decisions(pr))]:
+for name, dec in [('V0 SMA128/512', trader_ref.decisions(pr)), ('V2 adaptativa', trader_ref_ema.decisions(pr))]:
     W, o = curves(pr, dec); pk = np.maximum.accumulate(np.maximum(W, 10000))
     res[name] = dict(final=int(W[-1]), ordenes=o, comisiones=5*o, max_dd=int((pk-W).max()), W=W)
 q = (10000-5)//pr[0]; bhW = np.array([10000-5-q*pr[0]+q*p for p in pr]); pk = np.maximum.accumulate(np.maximum(bhW, 10000))
@@ -31,7 +31,7 @@ tabla = {k: {kk: vv for kk, vv in v.items() if kk != 'W'} for k, v in res.items(
 # figura 1: precio y patrimonio
 fig, ax = plt.subplots(2, 1, figsize=(7, 5), sharex=True)
 ax[0].plot(pr, lw=.6, color='k'); ax[0].set_ylabel('precio normalizado')
-for k, c in [('No operar', 'gray'), ('Comprar y mantener', 'tab:blue'), ('V0 SMA128/512', 'tab:orange'), ('V2 EMA 64/256', 'tab:green')]:
+for k, c in [('No operar', 'gray'), ('Comprar y mantener', 'tab:blue'), ('V0 SMA128/512', 'tab:orange'), ('V2 adaptativa', 'tab:green')]:
     ax[1].plot(res[k]['W'], lw=.8, label=k, color=c)
 ax[1].set_ylabel('patrimonio ($)'); ax[1].set_xlabel('tick'); ax[1].legend(fontsize=7); plt.tight_layout(); plt.savefig(os.path.join(ROOT, 'informe/fig/patrimonio.pdf')); plt.close()
 # perfil por region (Amdahl)

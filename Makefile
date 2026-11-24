@@ -21,7 +21,7 @@ JSON := $(TOP).json
 ASC  := $(TOP).asc
 BIN  := $(TOP).bin
 
-.PHONY: all prog clean stats game test trade p4-test
+.PHONY: all prog clean stats game test trade p4-test p4-full-check
 
 # Default target
 all: prog
@@ -53,6 +53,14 @@ p4-test: sw/trade.hex
 		$$(yosys-config --datdir)/ice40/cells_sim.v \
 		rtl/*.v rtl/espino_core/*.v tb/tb_proyecto_4.sv
 	vvp /tmp/tb_p4
+
+# Verificación larga: 20 000 ticks y comparación exacta con la referencia Python.
+p4-full-check: sw/trade.hex
+	iverilog -g2012 -DNT=20000 -DPER=20000 -s tb_metrics -o /tmp/tb_p4_full \
+		$$(yosys-config --datdir)/ice40/cells_sim.v \
+		rtl/*.v rtl/espino_core/*.v tb/tb_metrics.sv
+	vvp -n /tmp/tb_p4_full
+	python3 ref/compare.py tb/practica.csv decisiones.csv ema
 
 # Step 2: Place and Route using NextPNR
 $(ASC): $(JSON) $(PCF)

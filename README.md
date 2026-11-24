@@ -29,6 +29,7 @@ Herramientas probadas: Yosys 0.68+130, nextpnr-ice40 0.11.1 (`--hx1k --package v
 ```bash
 make trade            # ensambla trade.s, trade_sw.s y trade_hw.s con sw/assembler.py (no se usa un assembler externo)
 make p4-test          # testbench oficial con la versión final (4 chequeos)
+make p4-full-check    # 20 000 ticks y comparación exacta con la referencia Python
 make test             # pruebas unitarias del assembler
 make all              # sintetiza trade_top, place & route a 25 MHz, genera el bitstream y programa la Go Board
 ```
@@ -49,12 +50,11 @@ bash ref/hw_report.sh   # tabla de LUTs, celdas lógicas, BRAM, Fmax, ciclos, IC
 `ref/trader_ref_ema.py` es la referencia bit-exacta de `sw/trade.s` (`ref/trader_ref.py` lo es de V0 y V1). Para comprobar que el assembly toma **exactamente** las mismas decisiones en toda la serie:
 
 ```bash
-make p4-test                                           # escribe decisiones.csv (2000 ticks)
-python3 ref/compare.py tb/practica.csv decisiones.csv ema   # "diferencias: 0"
+make p4-full-check                                     # escribe 20 000 decisiones y comprueba "diferencias: 0"
 python3 ref/trader_ref_ema.py tb/practica.csv          # patrimonio, órdenes y pérdida máxima de la referencia
 ```
 
-(Para V0/V1 omitir el tercer argumento `ema`.) Con `-DNT=20000` el chequeo cubre los 20 000 ticks.
+(Para comparar manualmente V0/V1 se omite el tercer argumento `ema`.)
 
 ## Resumen de resultados (serie de práctica de Meta, 20 000 ticks)
 
@@ -78,7 +78,6 @@ Presupuesto de la ronda 3: 2262 ciclos. La PLL no es una opción en esta placa (
 - La maestra recorta las compras a lo que alcanza la caja y las ventas a lo que se tiene, y una orden sin efecto no paga comisión. Por eso el programa repite órdenes de 63 acciones mientras mantiene su estado. Esto permite completar posiciones incluso con precios bajos del rango permitido (1 a 255), sin llevar una copia de la contabilidad ni conocer la serie.
 - Las variantes V1 y V2 usan `LitePeriph=1` (sin LEDs, displays ni contador de ciclos) para caber en 1280 celdas lógicas.
 - Todo el hardware agregado tiene testbench: `tb_sma.sv` para el acelerador y `tb_metrics.sv` / `tb_proyecto_4.sv` (con comparación contra la referencia) para el ALU con shifter.
-- Datos sintéticos para validar robustez: `ref/gen_series.py` (requiere precios diarios descargados a `/tmp/p4data/*.json`; no se usan dentro del diseño).
 
 ---
 

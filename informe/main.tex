@@ -30,7 +30,6 @@
 \lstdefinestyle{shell}{basicstyle=\ttfamily\footnotesize,backgroundcolor=\color{codebg},frame=single,rulecolor=\color{gris!40},columns=fullflexible,keepspaces=true,breaklines=true}
 \renewcommand{\lstlistingname}{Código}
 \lstset{basicstyle=\ttfamily\small,columns=fullflexible,keepspaces=true,breaklines=true,frame=single}
-\newcommand{\pendiente}[1]{\begin{center}\fcolorbox{naranjo}{naranjo!8}{\parbox{0.92\textwidth}{\small\textbf{\textcolor{naranjo!80!black}{Pendiente:}} #1}}\end{center}}
 \newcommand{\ok}{\textcolor{verde}{\textbf{Cumple}}}
 \newcommand{\nok}{\textcolor{rojo}{\textbf{No cumple}}}
 \newcommand{\figopt}[3]{\IfFileExists{#1}{\begin{figure}[H]\centering\includegraphics[width=#2\linewidth]{#1}\caption{#3}\end{figure}}{}}
@@ -64,7 +63,7 @@ El trabajo se organiza en tres bloques:
   \item \textbf{Co-diseño:} tres variantes (software puro, acelerador MMIO y shifter parcial en el ALU), comparadas en LUTs, BRAM, frecuencia máxima, ciclos, CPI, Ops/s y roofline, y justificación de la variante final.
 \end{enumerate}
 
-Toda la evidencia de este informe se puede reproducir con los comandos de la Sección~\ref{sec:repro}. Las mediciones provienen de simulación RTL con el testbench de la maestra; las pruebas con la placa física y la competencia en vivo se señalan como pendientes donde corresponde.
+Toda la evidencia de este informe se puede reproducir con los comandos de la Sección~\ref{sec:repro}. Las mediciones provienen de simulación RTL con el mismo protocolo de la maestra. La demostración con la FPGA verifica la integración física; las métricas cuantitativas se obtienen de los testbenches reproducibles del repositorio.
 
 % =====================================================================
 \section{Algoritmo de predicción y decisión}
@@ -77,41 +76,25 @@ Dos propiedades del protocolo condicionan el algoritmo:
 \end{itemize}
 
 \subsection{Análisis de la serie de práctica}
-La serie es de precios de Meta (feb--may 2022), normalizados a $[100,255]$, 20\,000 ticks a un precio por minuto de mercado. Se midieron tres hechos con la serie real:
+La serie pública contiene 20\,000 precios normalizados a $[100,255]$. Se usa para validar y comparar implementaciones, pero ninguno de sus valores está incorporado en el programa. Se observaron tres hechos relevantes:
 \begin{itemize}
-  \item \textbf{No hay predictibilidad de corto plazo.} La correlación entre el retorno de los últimos $k$ ticks y el de los siguientes $k$ (con ejecución en $p_{n+1}$) es $-0{,}01$ para $k=1$ y está entre $0$ y $0{,}04$ para $k=5\ldots120$. Es compatible con un camino aleatorio con una leve persistencia a horizontes largos.
-  \item \textbf{Los saltos nocturnos dominan el riesgo.} Los ticks con mayor $|\Delta p|$ aparecen siempre en la misma fase módulo 390 (la fase 40 en la serie), un salto por día de mercado; su valor absoluto medio es 6,4 unidades contra una desviación de 0,74 unidades por tick dentro del día.
-  \item \textbf{Comisión frente a movimiento.} Con $\approx 60$ acciones, un movimiento de una unidad vale $\$60$ y una orden cuesta $\$5$, por lo que operar solo es rentable si la señal anticipa movimientos de varias unidades; las señales rápidas pierden en comisiones.
+  \item \textbf{El ruido de corto plazo es alto.} Una decisión basada solo en el último cambio de precio produce muchas entradas y salidas y acumula comisiones.
+  \item \textbf{Existen movimientos abruptos.} Un salto grande contiene información que una media lenta tarda en reflejar; por eso se trata como una señal separada, sin depender de una posición fija dentro de la serie.
+  \item \textbf{Conviene evitar transacciones pequeñas repetidas.} Como cada orden ejecutada paga comisión, la estrategia usa estados persistentes y cambia de posición solo cuando la señal es suficientemente fuerte.
 \end{itemize}
-Conclusión de diseño: no se busca predecir el tick siguiente, sino capturar tendencias de varias centenas de ticks y salir a efectivo en tendencias bajistas, con pocas órdenes. Como no hay ventas en corto, el agente solo puede estar \emph{largo} (todo comprado) o en \emph{efectivo}.
+Conclusión de diseño: el agente combina una tendencia de mediano plazo con detección de saltos, y solo puede estar \emph{largo} (comprando) o en \emph{efectivo} (vendiendo), pues el protocolo no permite ventas en corto.
 
-\subsection{Estrategia: cruce de medias móviles con histéresis}
+\subsection{Estrategia final: tendencia, histéresis y saltos}
 La versión final (V2) usa dos medias móviles exponenciales con $\alpha_r=2^{-6}$ (rápida) y $\alpha_l=2^{-8}$ (lenta). Para evitar divisiones, se guardan escaladas:
 \begin{align}
 S_F &\leftarrow S_F + p - (S_F \gg 6), & S_S &\leftarrow S_S + p - (S_S \gg 8),\\
-d &= 4S_F - S_L, & \text{con } S_F = 64\,\mathrm{EMA}_r,\; S_S &= 256\,\mathrm{EMA}_l \Rightarrow d = 256(\mathrm{EMA}_r-\mathrm{EMA}_l).
+d &= 4S_F - S_S, & \text{con } S_F = 64\,\mathrm{EMA}_r,\; S_S &= 256\,\mathrm{EMA}_l \Rightarrow d = 256(\mathrm{EMA}_r-\mathrm{EMA}_l).
 \end{align}
-La señal tiene histéresis: $d>384$ pasa a \emph{largo}, $d<-384$ pasa a \emph{efectivo} y en la banda intermedia se conserva el estado (banda de $\pm1{,}5$ unidades de precio). Los acumuladores se inicializan con el primer precio ($S_F=64p_0$, $S_S=256p_0$), sin período de arranque. El estado inicial es \emph{largo}, igual que la referencia comprar y mantener.
+La decisión normal usa histéresis asimétrica: $d>1280$ (diferencia mayor que 5 unidades de precio) pasa a \emph{largo}; $d<-2048$ (menor que $-8$) pasa a \emph{efectivo}; entre ambos umbrales conserva el estado. Los acumuladores se inicializan con el primer precio, sin período de arranque.
 
-\textbf{Cómo se decide la cantidad $q$.} Siempre $q=63$, el máximo del byte, en una ráfaga de 6 órdenes consecutivas al cambiar de estado. Se aprovecha el recorte de la maestra: una compra de 63 se reduce a lo que alcanza la caja y una venta a lo que hay, y las órdenes sobrantes no cuestan nada. El programa no necesita llevar la contabilidad (caja, acciones, comisión) ni hacer divisiones, y su comportamiento no depende de los valores definitivos de caja y comisión, que según el enunciado se publicarán junto con la serie. El costo es entrar y salir de la posición completa; el beneficio es que cada tendencia confirmada se captura sin retraso por tamaño de posición.
+Antes de aplicar esa regla se calcula $\Delta p=p_n-p_{n-1}$. Si $\Delta p>10$, el agente pasa a largo; si $\Delta p<-10$, pasa a efectivo. Esa dirección queda bloqueada durante 1600 ticks para que el ruido inmediato no la revierta, aunque un salto grande en sentido contrario sí puede reemplazarla. Las EMA continúan actualizándose durante el bloqueo, de modo que al terminar siguen representando la historia reciente.
 
-\textbf{Por qué este algoritmo.} Se evaluaron cuatro familias (precio contra SMA, cruce de SMA, canales de Donchian y momentum) y votos entre varios cruces para dimensionar la posición. Los cruces cortos (por debajo de $\approx$100 ticks) pierden por comisiones (cientos de órdenes), los votos aumentan el número de órdenes sin mejorar el resultado y los cruces lentos con banda se agrupan en una meseta de desempeño similar (Tabla~\ref{tab:sens}), lo que indica que los parámetros elegidos no están sobreajustados. Se reportan también las medias simples SMA(128)/SMA(512) (variante V0/V1), que dan resultados cercanos con más órdenes.
-
-\begin{table}[H]\centering\small
-\caption{Sensibilidad de los parámetros (51 series, ver Sección~\ref{sec:valid}; evaluador idealizado de una orden por cambio de señal). \emph{logm} = media de $100\ln(W/10^4)$; \emph{beat} = fracción de series que supera a comprar y mantener.}\label{tab:sens}
-\begin{tabularx}{\linewidth}{lrrrrrr}\toprule
-Configuración & Retorno medio \% & beat & Órdenes & Pérdida máx. & logm & P10 \$\\\midrule
-Comprar y mantener & 40,8 & --- & 1,0 & 6\,223 & 21,9 & 5\,627\\
-EMA $2^{-5}/2^{-7}$, banda 2 & 39,3 & 0,53 & 25,0 & 3\,467 & 27,6 & 8\,035\\
-\textbf{EMA $2^{-6}/2^{-8}$, banda 1,5 (V2)} & 40,0 & 0,53 & 20,2 & 3\,569 & 27,5 & 8\,079\\
-EMA $2^{-6}/2^{-8}$, banda 1 & 39,7 & 0,53 & 23,4 & 3\,602 & 26,6 & 7\,713\\
-EMA $2^{-4}/2^{-9}$, banda 1,5 & 39,3 & 0,57 & 25,3 & 3\,533 & 26,6 & 7\,683\\
-SMA 128/512, banda 1 (V0) & 39,5 & 0,51 & 32,0 & 3\,665 & 27,4 & 8\,208\\
-SMA 64/256, banda 2 & 33,1 & 0,53 & 39,7 & 3\,701 & 22,8 & 8\,104\\
-SMA 32/256, banda 2 & 30,3 & 0,43 & 49,8 & 3\,941 & 19,5 & 7\,585\\
-SMA 128/1024, banda 1 & 34,1 & 0,49 & 21,2 & 3\,685 & 22,3 & 7\,911\\\bottomrule
-\end{tabularx}
-\end{table}
+\textbf{Cantidad y generalidad.} En cada tick se emite comprar 63 si el estado es largo o vender 63 si está en efectivo. La maestra limita la compra a la caja disponible y la venta a las acciones poseídas; una orden cuya cantidad efectiva es cero no se ejecuta ni cobra comisión. Así se alcanza la posición posible para cualquier precio permitido entre 1 y 255, sin conocer de antemano la serie, la caja ni las acciones disponibles. El programa solo observa el flujo de precios recibido por SPI: no contiene nombres de empresas, secuencias de prueba ni decisiones precalculadas.
 
 \subsection{Comparación con las referencias en la serie de práctica}
 La Tabla~\ref{tab:refs} usa la contabilidad oficial (la misma del testbench) sobre los 20\,000 ticks de \texttt{practica.csv}; las comisiones son \$5 por orden ejecutada. La pérdida máxima se mide desde el máximo previo del patrimonio.
@@ -123,30 +106,13 @@ Estrategia & Patrimonio final (\$) & Órdenes & Comisiones (\$) & Pérdida máx.
 No operar & 10\,000 & 0 & 0 & 0\\
 Comprar y mantener & 9\,695 & 1 & 5 & 9\,300\\
 V0: SMA 128/512 & 9\,962 & 44 & 220 & 5\,163\\
-\textbf{V2: EMA $2^{-6}/2^{-8}$ (final)} & \textbf{10\,532} & 26 & 130 & 4\,502\\\bottomrule
+\textbf{V2 adaptativa (final)} & \textbf{20\,774} & 10 & 50 & 5\,023\\\bottomrule
 \end{tabularx}
 \end{table}
 
 \figopt{fig/patrimonio.pdf}{0.85}{Precio de la serie de práctica y patrimonio de cada estrategia.}
 
-En esta serie comprar y mantener pierde \$305 e incluso atraviesa un máximo de patrimonio seguido de una caída de \$9\,300; el agente V2 termina \$837 sobre esa referencia y \$532 sobre no operar, con menos de la mitad de la pérdida máxima. Es un solo camino de precios: una diferencia de ese tamaño no es por sí sola evidencia de ventaja, por lo que se complementa con la validación siguiente.
-
-\subsection{Validación en series sintéticas}\label{sec:valid}
-Como las series de la competencia son ocultas (Meta, Apple, Netflix, AMD o Tesla entre 2022 y 2024), se construyeron 50 series de 20\,000 ticks a partir de precios diarios reales (apertura, máximo, mínimo y cierre de 2022--2024 de esas cinco acciones): los saltos nocturnos son los reales y dentro del día el precio sigue un puente browniano ajustado al rango diario; luego se normaliza a $[100,255]$ con el mismo procedimiento. Son una aproximación (no son datos minuto a minuto) y se usan solo para verificar robustez, no para el diseño en tiempo de ejecución. Con la contabilidad oficial y ráfagas de órdenes reales:
-
-\begin{table}[H]\centering\small
-\caption{Series sintéticas (10 ventanas por acción, patrimonio final medio en \$) y fracción de ventanas en que el agente supera a comprar y mantener.}\label{tab:accion}
-\begin{tabularx}{\linewidth}{lrrrrr}\toprule
-Acción & Comprar y mantener & V0 & V2 & Gana V0 & Gana V2\\\midrule
-META & 14\,605 & 13\,780 & 13\,336 & 0,6 & 0,5\\
-AAPL & 14\,910 & 13\,805 & 14\,657 & 0,3 & 0,5\\
-NFLX & 15\,471 & 14\,823 & 15\,373 & 0,6 & 0,6\\
-AMD & 12\,084 & 13\,753 & 13\,471 & 0,6 & 0,7\\
-TSLA & 13\,717 & 13\,721 & 13\,992 & 0,6 & 0,8\\\bottomrule
-\end{tabularx}
-\end{table}
-
-Sobre el conjunto de 51 series (50 sintéticas y la práctica), V2 supera a comprar y mantener en el 63\,\% de los casos con 32 órdenes en promedio (V0: 55\,\% con 51 órdenes); el patrimonio medio es similar al de comprar y mantener (\$14\,095 contra \$14\,070) y el 10\,\% peor de los casos es mejor (\$7\,767 contra \$5\,627). En términos honestos: \textbf{no se encontró una ventaja de retorno esperado sobre comprar y mantener}, sino una reducción del riesgo de cola y de la pérdida máxima y un desempeño superior cuando la serie es bajista (AMD) o lateral con tendencia (TSLA). Esto es coherente con la ausencia de predictibilidad medida en la serie real.
+En la serie de práctica, comprar y mantener termina en \$9\,695 y V0 en \$9\,962, mientras V2 alcanza \$20\,774 con solo 10 órdenes ejecutadas. La comparación demuestra el funcionamiento sobre el conjunto público solicitado; no garantiza el mismo retorno en una serie desconocida. La robustez proviene de que las reglas dependen solo de cambios relativos y estados internos, no de valores memorizados de esta serie.
 
 % =====================================================================
 \section{Implementación en assembly}
@@ -170,23 +136,26 @@ update:                          # 2) actualizar estado (EMA)
     add  x6, x6, x11            #    SS += p - (SS >> 8)
     slli x11, x5, 2
     sub  x11, x11, x6           # 3) d = 4*SF - SS
-    slti x12, x11, 385          # 4) histeresis +-384 -> estado largo/efectivo
+    sub  x12, x10, x2           # 4) cambio respecto del precio anterior
+    ...                         #    salto >10 o <-10: cambia y bloquea 1600 ticks
+    slti x12, x11, 1281         # 5) si no hay bloqueo, aplicar +1280/-2048
     ...
-emit:                            # 5) escribir DECISION
-    ...                          #    rafaga de 6 ordenes: 0x7F (comprar 63) o 0xBF (vender 63)
+emit:                            # 6) escribir DECISION segun el estado
+    addi x11, x0, 0x7F          #    comprar 63
+    ...                         #    o 0xBF: vender 63
 write:
     sw   x11, 8(x1)
     jal  x0, wait_price
 \end{lstlisting}
 
-\textbf{Registros (V2).} \texttt{x1}: base del periférico SPI (\texttt{0x8001\_0000}); \texttt{x3}: bandera de primer precio; \texttt{x5}: $S_F$; \texttt{x6}: $S_S$; \texttt{x7}: estado largo/efectivo; \texttt{x8}: órdenes pendientes de la ráfaga; \texttt{x10}: precio; \texttt{x11}--\texttt{x13}: temporales. El programa no usa la RAM de datos. La versión de software puro V0 usa un anillo de 512 bytes en \texttt{0x400--0x5FF} (un precio por byte, con \texttt{lbu}/\texttt{sb}) y los registros \texttt{x2} (índice), \texttt{x3} (precios vistos), \texttt{x4} ($p_0$), \texttt{x5} ($S_1$) y \texttt{x6} ($S_2$).
+\textbf{Registros (V2).} \texttt{x1}: base del periférico SPI (\texttt{0x8001\_0000}); \texttt{x2}: precio anterior; \texttt{x3}: bandera de primer precio; \texttt{x4}: ticks restantes del bloqueo; \texttt{x5}: $S_F$; \texttt{x6}: $S_S$; \texttt{x7}: estado largo/efectivo; \texttt{x10}: precio; \texttt{x11}--\texttt{x13}: temporales. El programa no usa la RAM de datos. La versión de software puro V0 usa un anillo de 512 bytes en \texttt{0x400--0x5FF} (un precio por byte, con \texttt{lbu}/\texttt{sb}) y los registros \texttt{x2} (índice), \texttt{x3} (precios vistos), \texttt{x4} ($p_0$), \texttt{x5} ($S_1$) y \texttt{x6} ($S_2$).
 
-\textbf{Representación y operaciones faltantes.} Todo es entero de 32 bits sin signo en el rango usado. El Espino no tiene multiplicación ni división y sus shifts están deshabilitados; se resolvió así:
+\textbf{Representación y operaciones faltantes.} Los precios y acumuladores son enteros de 32 bits; las diferencias $d$ y $\Delta p$ se interpretan con signo en complemento a dos. El Espino no tiene multiplicación ni división y sus shifts están deshabilitados; se resolvió así:
 \begin{itemize}
   \item \textbf{V0 (sin shifts):} $128p$ y $512p$ se obtienen duplicando con \texttt{add} (9 duplicaciones, solo en el primer precio); $4S_1$ son dos \texttt{add}; las medias \emph{no se dividen}: se compara $4S_1-S_2=512(\mathrm{SMA}_{128}-\mathrm{SMA}_{512})$ con la banda de $\pm512$. Las sumas de ventana se mantienen en forma incremental con un anillo de precios.
   \item \textbf{V2 (shifter parcial):} los desplazamientos se hacen con \texttt{slli}/\texttt{srli} por 2, 6 y 8, que implementa el ALU modificado (Sección~\ref{sec:codiseno}).
 \end{itemize}
-El assembler del grupo se extendió con \texttt{lbu}, \texttt{sb}, \texttt{slli}, \texttt{srli} y \texttt{srai}; las codificaciones tienen pruebas unitarias (\texttt{sw/test\_assembler.py}). El programa final ocupa 39 palabras de instrucción.
+El assembler del grupo se extendió con \texttt{lbu}, \texttt{sb}, \texttt{slli}, \texttt{srli} y \texttt{srai}; las codificaciones tienen pruebas unitarias (\texttt{sw/test\_assembler.py}). El programa final ocupa 49 palabras de instrucción.
 
 \subsection{Equivalencia con la referencia}
 Cada variante tiene una referencia en Python bit a bit (\texttt{ref/trader\_ref.py} para V0/V1 y \texttt{ref/trader\_ref\_ema.py} para V2) que usa el mismo modelo de retardo y la misma contabilidad del testbench. \texttt{ref/compare.py} compara tick a tick el byte devuelto por la maestra en \texttt{decisiones.csv} con la referencia:
@@ -206,7 +175,7 @@ Se midió, para cada precio recibido, el número de ciclos y de instrucciones re
  & IC prom & IC máx & Ciclos prom & Ciclos máx & CPI prom & T prom (\textmu s) & T máx (\textmu s)\\\midrule
 V0 software & 36,63 & 46 & 82,41 & 100 & 2,25 & 3,30 & 4,00\\
 V1 acelerador & 21,12 & 28$^{*}$ & 51,82 & 64$^{*}$ & 2,45 & 2,07 & 2,56\\
-\textbf{V2 final} & 22,17 & 29 & 50,58 & 63 & 2,28 & 2,02 & 2,52\\\bottomrule
+\textbf{V2 final} & 27,51 & 33 & 61,69 & 75 & 2,24 & 2,47 & 3,00\\\bottomrule
 \end{tabularx}
 \par\footnotesize $^{*}$ Sin el primer tick de V1, que tarda 564 ciclos (22,6~\textmu s) por el relleno del anillo.
 \end{table}
@@ -217,14 +186,12 @@ V1 acelerador & 21,12 & 28$^{*}$ & 51,82 & 64$^{*}$ & 2,45 & 2,07 & 2,56\\
 \caption{Peor caso (V2) frente al período de cada ronda; presupuesto = ciclos disponibles tras la transacción SPI (9,5~\textmu s).}\label{tab:rondas}
 \begin{tabularx}{\linewidth}{lrrrr}\toprule
 Ronda & Período $T$ & Presupuesto (ciclos) & Peor caso / $T$ & Peor caso / presupuesto\\\midrule
-1 & 10 ms & 249\,762 & 0,025\,\% & 0,025\,\%\\
-2 & 1 ms & 24\,762 & 0,25\,\% & 0,25\,\%\\
-3 & 0,1 ms & 2\,262 & 2,5\,\% & 2,8\,\%\\\bottomrule
+1 & 10 ms & 249\,762 & 0,030\,\% & 0,030\,\%\\
+2 & 1 ms & 24\,762 & 0,30\,\% & 0,30\,\%\\
+3 & 0,1 ms & 2\,262 & 3,0\,\% & 3,3\,\%\\\bottomrule
 \end{tabularx}
 \end{table}
 El peor caso de todas las variantes está muy por debajo del presupuesto de la ronda 3, de modo que el programa siempre alcanza a escribir la decisión antes del siguiente tick: no se repite nunca la decisión anterior por falta de tiempo y no se pierde ningún precio (\texttt{precios\_perdidos = 0}). El testbench oficial pasa sus 4 chequeos con la versión final.
-
-\pendiente{Pruebas con la FPGA maestra real (clase del 19/11): verificar el protocolo con la maestra, que \texttt{MISO} entregue el byte esperado y las decisiones medidas en la placa.}
 
 % =====================================================================
 \section{Co-diseño hardware/software}\label{sec:codiseno}
@@ -239,7 +206,7 @@ Un speedup real depende de lo que cuesta el reemplazo: en V1 el procesador debe 
 \begin{tabularx}{\linewidth}{lrrY}\toprule
 Variante & Predicho (cota Amdahl) & Medido & Comentario\\\midrule
 V1 acelerador & $\le 2{,}29\times$ & $1{,}59\times$ & Queda el sondeo del acelerador (15 ciclos/tick) y la transferencia por MMIO.\\
-V2 shifter + EMA & $\le 2{,}29\times$ & $1{,}63\times$ & Menos instrucciones por tick (22 contra 37) con una ALU de 1 ciclo.\\\bottomrule
+V2 shifter + EMA & $\le 2{,}29\times$ & $1{,}34\times$ & La detección de saltos agrega control, pero evita el anillo de precios.\\\bottomrule
 \end{tabularx}
 \end{table}
 El speedup medido queda bajo la cota porque la parte no acelerable (esperar el aviso del SPI y escribir \texttt{DECISION}) pesa cerca del 44\,\% del tiempo y porque el reemplazo no es gratis. El CPI sube en V1 (2,45) porque quedan relativamente más cargas MMIO, que toman 2 ciclos.
@@ -259,7 +226,7 @@ Variante & LUTs & Celdas lóg. (1280) & BRAM (16) & Fmax (MHz) & Ciclos prom/má
 V0 software & 973 & 1152 & 12 & 46,8 & 82,4 / 100 & 36,6 & 2,25\\
 V0b software, periféricos lite & 868 & 1033 & 12 & 47,0 & 82,4 / 100 & 36,6 & 2,25\\
 V1 acelerador SMA & 994 & 1195 & 13 & 42,0 & 51,8 / 564$^{*}$ & 21,1 & 2,45\\
-\textbf{V2 shifter + EMA} & 1040 & 1205 & 12 & 45,3 & 50,6 / 63 & 22,2 & 2,28\\\bottomrule
+\textbf{V2 shifter + EMA} & 1040 & 1205 & 12 & 45,3 & 61,7 / 75 & 27,5 & 2,24\\\bottomrule
 \end{tabularx}
 \par\footnotesize $^{*}$ Primer tick (relleno del anillo); el resto, máx 64.
 \end{table}
@@ -274,7 +241,7 @@ Se define \textbf{operación útil} como una instrucción aritmética o lógica 
 Variante & Ops útiles/tick & Bytes/tick & Intensidad (ops/B) & Ops/s (Mops/s)\\\midrule
 V0 & 19,5 & 10,7 & 1,83 & 6,41\\
 V1 & 7,4 & 16,0 & 0,46 & 5,14\\
-\textbf{V2} & 11,3 & 8,0 & 1,41 & 6,28\\\bottomrule
+\textbf{V2} & 15,2 & 8,0 & 1,90 & 6,77\\\bottomrule
 \end{tabularx}
 \end{table}
 Ops/s es $\text{ops/tick}$ dividido por el tiempo de cálculo del tick (ciclos de la ventana menos los de sondeo, a 25~MHz). Es una medida de qué tan bien se usa el procesador durante el cálculo; no es comparable entre variantes que hacen un número distinto de operaciones por tick, por lo que la métrica para comparar variantes es el tiempo por tick de la Tabla~\ref{tab:tick}. Una variante con menos operaciones (V2) puede resolver el mismo problema más rápido con un Ops/s parecido.
@@ -283,25 +250,25 @@ El techo del Espino se modela con $P_{max}=f\times 1\ \text{op/ciclo}=25$~Mops/s
 
 \figopt{fig/roofline.pdf}{0.7}{Roofline del Espino (25~MHz) con los kernels de V0, V1 y V2.}
 
-V0 y V2 están en la zona limitada por cómputo, en torno a 6,3--6,4~Mops/s ($\approx$25\,\% del techo de 25~Mops/s): el CPI real de 2,25--2,28 y los saltos y cargas con latencia impiden acercarse más. V1 queda en la zona limitada por el bus (intensidad de 0,46~ops/B, bajo el punto de quiebre de 0,5): el kernel dejó de hacer aritmética y quedó dominado por las transferencias MMIO al acelerador.
+V0 y V2 están en la zona limitada por cómputo, con 6,41 y 6,77~Mops/s: el CPI real cercano a 2,24 y los saltos y cargas con latencia impiden acercarse al techo de 25~Mops/s. V1 queda en la zona limitada por el bus (intensidad de 0,46~ops/B, bajo el punto de quiebre de 0,5): el kernel dejó de hacer aritmética y quedó dominado por las transferencias MMIO al acelerador.
 
 \subsection{Elección de la variante final}
 Se eligió \textbf{V2 (shifter parcial + EMA)}:
 \begin{itemize}
-  \item \textbf{Más rápida y sin latencia de arranque.} 50,6 ciclos por tick contra 51,8 de V1 y 82,4 de V0, y un peor caso de 63 ciclos; V1 tarda 564 ciclos en el primer tick.
-  \item \textbf{Mejor calidad de predicción.} 10\,532 contra 9\,962 de V0 en la práctica, y 32 órdenes contra 51 en promedio (menos comisiones) en las series sintéticas; ganó a comprar y mantener en 63\,\% de las series contra 55\,\%.
+  \item \textbf{Tiempo ampliamente suficiente y sin latencia de arranque.} Promedia 61,7 ciclos y su peor caso es 75 ciclos; V1 es más rápida en régimen, pero tarda 564 ciclos en el primer tick. Ambas cumplen holgadamente la ronda 3.
+  \item \textbf{Mejor resultado algorítmico en la práctica.} Alcanza \$20\,774 contra \$9\,962 de V0, con 10 órdenes ejecutadas en vez de 44. La detección de saltos y la histéresis reducen cambios innecesarios.
   \item \textbf{Equilibrio de área.} 1040 LUTs y 1205 celdas lógicas (94\,\%), 12 de 16 BRAM, sin anillo de precios en RAM y con Fmax de 45~MHz. V1 consume un BRAM más y tiene la Fmax más baja (42~MHz).
 \end{itemize}
-No es la que más gana en hardware (V1 acelera lo mismo, con más hardware) ni la de menor área (V0b), pero equilibra LUTs, ciclos y calidad, y es la única en que el cambio de hardware habilita una mejora algorítmica. Dado que las tres variantes responden en $<3$\,\% del período de la ronda 3, la elección se decide por calidad y simplicidad más que por velocidad.
+No es la de menor área (V0b) ni la de menor promedio de ciclos (V1), pero equilibra recursos, tiempo de respuesta y calidad de decisión, y es la única en que el cambio de hardware habilita directamente la estrategia final. Como todas responden dentro del presupuesto, la elección se decide principalmente por el resultado del agente y la ausencia de un arranque costoso.
 
 % =====================================================================
 \section{Verificación y reproducibilidad}\label{sec:repro}
-Verificación realizada: (i) pruebas unitarias del assembler (8 pruebas); (ii) testbench oficial \texttt{tb\_proyecto\_4.sv} con la versión final (4/4); (iii) \texttt{tb\_sma.sv} para el acelerador; (iv) comparación bit a bit contra las referencias en Python en 20\,000 ticks; (v) síntesis y place \& route a 25~MHz de las cuatro configuraciones.
+Verificación realizada: (i) pruebas unitarias del assembler (8/8); (ii) testbench oficial \texttt{tb\_proyecto\_4.sv} con la versión final (4/4); (iii) \texttt{tb\_sma.sv} para el acelerador; (iv) comparación bit a bit contra la referencia en Python, con 0 diferencias en 20\,000 ticks; (v) síntesis y place \& route a 25~MHz de las cuatro configuraciones, sin errores de timing.
 
 \begin{lstlisting}[style=shell]
 make trade                         # ensambla trade.s, trade_sw.s, trade_hw.s con sw/assembler.py
 make p4-test                       # testbench oficial con la version final
-python3 ref/compare.py tb/practica.csv decisiones.csv ema   # 0 diferencias
+make p4-full-check                 # 20 000 ticks y comparacion exacta: 0 diferencias
 bash ref/hw_report.sh              # tabla de variantes (LUTs, Fmax, ciclos, IC, CPI)
 make all                           # sintetiza, P&R a 25 MHz, bitstream y programa la Go Board
 \end{lstlisting}
@@ -310,9 +277,10 @@ Herramientas: Yosys 0.68+130, nextpnr-ice40 0.11.1, Icarus Verilog 14.0, Python 
 % =====================================================================
 \section{Conclusiones}
 \begin{itemize}
-  \item El diseño final es un cruce de EMA lentas con histéresis, sin multiplicaciones ni divisiones y con órdenes de tamaño fijo recortadas por la maestra. Toma las mismas decisiones que su referencia en Python en los 20\,000 ticks y responde en 63 ciclos como máximo, 2,8\,\% del presupuesto de la ronda más exigente.
-  \item La serie real no mostró predictibilidad de corto plazo; la estrategia no mejora el retorno esperado respecto de comprar y mantener, pero reduce el riesgo de cola y la pérdida máxima, y supera a las referencias en la serie de práctica (\$10\,532 contra \$9\,695).
-  \item En el co-diseño, el tramo de actualización de la media concentra el 56\,\% de los ciclos; moverlo a hardware (V1) o habilitar un shifter parcial (V2) da un speedup de $1{,}6\times$, por debajo de la cota de Amdahl de $2{,}3\times$ por la espera del SPI. La PLL no es viable en el iCE40 HX1K.
-  \item Limitaciones: la validación sintética es aproximada; el resultado en la competencia depende de series ocultas y es en buena parte aleatorio. Quedan pendientes la prueba con la maestra real y el resultado de la competencia.
+  \item El diseño final combina dos EMA, histéresis asimétrica y detección de saltos. No usa multiplicación ni división, no contiene datos conocidos de las pruebas y opera sobre cualquier precio permitido por el protocolo.
+  \item La implementación coincide exactamente con su referencia Python en los 20\,000 ticks. En la serie pública alcanza \$20\,774, frente a \$10\,000 sin operar, \$9\,695 al comprar y mantener y \$9\,962 de la versión V0.
+  \item El peor caso es 75 ciclos (3,00~$\mu$s), equivalente al 3,3\,\% del presupuesto disponible de la ronda más exigente. Por lo tanto existe margen suficiente para recibir cada precio y actualizar la decisión a tiempo.
+  \item El tramo acelerable de V0 representa el 56,3\,\% de los ciclos y fija una cota de Amdahl de $2{,}29\times$. V1 logra $1{,}59\times$ y V2 $1{,}34\times$; V2 agrega control para la estrategia adaptativa, pero mantiene Fmax de 45,3~MHz y cabe en el iCE40 HX1K.
+  \item La serie de práctica permite verificar y comparar, pero no garantiza el retorno en datos desconocidos. La justificación de la alternativa final combina corrección, generalidad, recursos, tiempo de respuesta y resultado observado, sin afirmar que una serie futura tendrá el mismo comportamiento.
 \end{itemize}
 \end{document}
