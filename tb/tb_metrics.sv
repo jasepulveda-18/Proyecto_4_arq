@@ -57,7 +57,7 @@ module tb_metrics;
     fd = $fopen(SERIE, "r"); r = $fgets(enc, fd);
     for (int n = 0; n < NTICKS; n++) r = $fscanf(fd, "%d,%d\n", t, precio[n]);
     fm = $fopen("metricas.csv", "w"); $fdisplay(fm, "tick,ciclos,ic");
-    #4000;
+    #12000;   // el reset de encendido del SoC dura ~10 us (contador de 8 bits): la maestra empieza despues
     fd = $fopen("decisiones.csv", "w"); $fdisplay(fd, "tick,precio,decision");
     for (int n = 0; n < NTICKS; n++) begin spi(precio[n]); $fdisplay(fd, "%0d,%0d,%02h", n, precio[n], rx); #(PERIODO_NS - SPI_NS); end
     $fclose(fd);
