@@ -77,6 +77,7 @@ Presupuesto de la ronda 3: 2262 ciclos. La PLL no es una opción en esta placa (
 
 - La maestra recorta las compras a lo que alcanza la caja y las ventas a lo que se tiene, y una orden sin efecto no paga comisión. Por eso el programa repite órdenes de 63 acciones mientras mantiene su estado. Esto permite completar posiciones incluso con precios bajos del rango permitido (1 a 255), sin llevar una copia de la contabilidad ni conocer la serie.
 - Las variantes V1 y V2 usan `LitePeriph=1` (sin LEDs, displays ni contador de ciclos) para caber en 1280 celdas lógicas.
+- **Reset de encendido registrado** (`rtl/pochoco_soc.v`): el reset sale de un registro y no de la comparación combinacional del contador. En la placa real, la comparación podía dar un pulso falso al cambiar varios bits del contador a la vez y el procesador arrancaba en un estado aleatorio (en simulación no se ve). Con el reset registrado el arranque es repetible; el contador pasó de 4 a 8 bits (~10 µs). El testbench oficial sigue en 4/4 con el mismo resultado.
 - Todo el hardware agregado tiene testbench: `tb_sma.sv` para el acelerador y `tb_metrics.sv` / `tb_proyecto_4.sv` (con comparación contra la referencia) para el ALU con shifter.
 
 ---

@@ -35,12 +35,17 @@ module pochoco_soc #(
   assign clk = i_Clk;
 
   // Power-on reset
-  reg  [3:0] por_cnt = 4'b0;
+  // Reset de encendido: contador de 8 bits y salida REGISTRADA. Con la comparacion combinacional
+  // (por_cnt == 4'hF) alimentando resets asincronos, el cambio simultaneo de varios bits del contador
+  // podia generar un pulso falso de liberacion y el procesador arrancaba en un estado aleatorio en la placa.
+  reg  [7:0] por_cnt = 8'b0;
+  reg        rst_q   = 1'b0;
   wire       rst_ni;
   always @(posedge clk) begin
-    if (por_cnt != 4'hF) por_cnt <= por_cnt + 4'd1;
+    if (por_cnt != 8'hFF) por_cnt <= por_cnt + 8'd1;
+    rst_q <= (por_cnt == 8'hFF);
   end
-  assign rst_ni = (por_cnt == 4'hF);
+  assign rst_ni = rst_q;
 
   // Core-memory wiring
   wire        instr_req;
