@@ -18,13 +18,13 @@ Agente de inversión que corre en el Espino Core: recibe el precio por SPI, deci
 | `tb/tb_metrics.sv` | Mismo escenario + métricas por tick (ciclos, IC, CPI) y perfil por instrucción |
 | `tb/tb_sma.sv` | Testbench del acelerador `pochoco_sma` |
 | `ref/` | Referencias en Python: `market.py` (contabilidad oficial), `trader_ref.py` (V0/V1), `trader_ref_ema.py` (V2 final), `compare.py`, `hw_report.sh` |
-| `informe/` | Fuente LaTeX (Overleaf), figuras y datos del informe |
+| [Informe del Proyecto 4](informe/Informe_Proyecto_4.pdf) | Informe final en PDF |
 | `docs/resultados_hw.md` | Tabla de variantes generada por `ref/hw_report.sh` |
 | `tb/practica.csv` | Serie de práctica (Meta, 20 000 ticks, precios 100–255) |
 
 ## Cómo usar (desde la raíz del repositorio)
 
-Herramientas probadas: Yosys 0.68+130, nextpnr-ice40 0.11.1 (`--hx1k --package vq100`), Icarus Verilog 14.0 (`-g2012`), Python 3.9.6 (numpy 2.0.2, matplotlib 3.9.4 solo para `informe/analisis.py`), oss-cad-suite en el `PATH`.
+Herramientas probadas: Yosys 0.68+130, nextpnr-ice40 0.11.1 (`--hx1k --package vq100`), Icarus Verilog 14.0 (`-g2012`), Python 3.9.6 y oss-cad-suite en el `PATH`.
 
 ```bash
 make trade            # ensambla trade.s, trade_sw.s y trade_hw.s con sw/assembler.py (no se usa un assembler externo)

@@ -21,4 +21,5 @@ sim/sim
 *.vcd
 *.csv
 !tb/practica.csv
-informe/*.zip
+/informe/*
+!/informe/Informe_Proyecto_4.pdf
